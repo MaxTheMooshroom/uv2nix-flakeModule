@@ -28,13 +28,10 @@
   outputs = { self, flake-parts, nixpkgs, ... }@inputs:
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [ flake-parts.flakeModules.flakeModules ];
+      systems = [];
 
       flake.flakeModules.default = {
-        imports = [];
-
-        modules = [
-          inputs.flake-module
-        ];
+        imports = with inputs; [ (import flake-module inputs) ];
       };
     };
 }

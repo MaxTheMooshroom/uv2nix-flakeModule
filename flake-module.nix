@@ -1,7 +1,6 @@
-{ inputs, config, lib, ... }@args: with builtins;
+{ uv2nix, pyproject-nix, pyproject-build-systems, ... }@inputs:
+{ config, lib, ... }@args: with builtins;
 let
-  inherit (inputs) uv2nix;
-
   inherit (lib) mkOption types;
 
   types-record = attrs: types.submodule {
@@ -87,7 +86,7 @@ in {
     };
   };
 
-  config.perSystem = { system, lib, pkgs, ... }:
+  config =
     let
       cfg = config.uv2nix;
 
@@ -99,16 +98,12 @@ in {
         inherit (cfg.workspace.pyproject) sourcePreference;
       };
 
-      editableOverlay = workspace.mkEditablePyprojectOverlay {
-        inherit (cfg.workspace.pyproject) root;
-      };
-
-      pythonSelection =
+      mkPythonSetUsing = pkgs:
         let
           python =
             cfg.python.package or (getAttr cfg.python.packageName pkgs);
 
-          pkg = pkgs.callPackage inputs.pypackage-nix.build.packages {
+          pkg = pkgs.callPackage pyproject-nix.build.packages {
             inherit python;
           };
 
@@ -120,36 +115,51 @@ in {
           pkg.overrideScope pkg-extensions;
 
     in rec {
-      packages.uv2nix =
-        pythonSelection.mkVirtualEnv
-          "${cfg.workspace.name}-env"
-          workspace.deps.default;
+      perSystem = { system, pkgs, ... }:
+      let
+        pythonSet = mkPythonSetUsing pkgs;
+      in {
+        packages.uv2nix =
+          pythonSet.mkVirtualEnv
+            "${cfg.workspace.name}-env"
+            workspace.deps.default;
 
-      lib.uv2nix.shellArgs =
+        devShells.uv2nix =
+          pkgs.mkShell
+            (flake.lib.uv2nix.mkShellArgs {
+              inherit pkgs pythonSet;
+            });
+      };
+
+      flake.lib.uv2nix.mkShellArgs =
         {
+          pkgs,
+          pythonSet,
+
           packages ? [],
           env ? {},
           shellHook ? "",
           ...
         }@args:
         let
-          misc-args = removeAttrs args [ "packages" "env" "shellHook" ];
+          misc-args = removeAttrs args [ "pkgs" "pythonSet" "packages" "env" "shellHook" ];
 
-          python =
-            pythonSelection.overrideScope
-              editableOverlay;
+          editableOverlay = workspace.mkEditablePyprojectOverlay {
+            inherit (cfg.workspace.pyproject) root;
+          };
+
+          pythonSet' = pythonSet.overrideScope editableOverlay;
 
           virtualenv =
-            python.mkVirtualEnv
+            pythonSet'.mkVirtualEnv
             "${cfg.workspace.name}-env-dev"
             workspace.deps.all;
         in
-          {
-            packages = packages ++ [ virtualenv pkgs.uv ];
+          { packages = packages ++ [ virtualenv pkgs.uv ];
 
             env = {
               UV_NO_SYNC = "1";
-              UV_PYTHON = pythonSet.python.interpreter;
+              UV_PYTHON = pythonSet'.python.interpreter;
               UV_PYTHON_DOWNLOADS = "never";
             } // env;
 
@@ -158,7 +168,5 @@ in {
               export REPO_ROOT=$(git rev-parse --show-toplevel)
             '' + shellHook;
           } // misc-args;
-
-      devShells.uv2nix = mkShell lib.uv2nix;
     };
 }
