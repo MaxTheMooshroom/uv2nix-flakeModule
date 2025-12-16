@@ -131,42 +131,46 @@ in {
             });
       };
 
-      flake.lib.uv2nix.mkShellArgs =
-        {
-          pkgs,
-          pythonSet,
+      flake.lib.uv2nix = {
+        inherit mkPythonSetUsing;
 
-          packages ? [],
-          env ? {},
-          shellHook ? "",
-          ...
-        }@args:
-        let
-          misc-args = removeAttrs args [ "pkgs" "pythonSet" "packages" "env" "shellHook" ];
+        mkShellArgs =
+          {
+            pkgs,
+            pythonSet,
 
-          editableOverlay = workspace.mkEditablePyprojectOverlay {
-            inherit (cfg.workspace.pyproject) root;
-          };
+            packages ? [],
+            env ? {},
+            shellHook ? "",
+            ...
+          }@args:
+          let
+            misc-args = removeAttrs args [ "pkgs" "pythonSet" "packages" "env" "shellHook" ];
 
-          pythonSet' = pythonSet.overrideScope editableOverlay;
+            editableOverlay = workspace.mkEditablePyprojectOverlay {
+              inherit (cfg.workspace.pyproject) root;
+            };
 
-          virtualenv =
-            pythonSet'.mkVirtualEnv
-            "${cfg.workspace.name}-env-dev"
-            workspace.deps.all;
-        in
-          { packages = packages ++ [ virtualenv pkgs.uv ];
+            pythonSet' = pythonSet.overrideScope editableOverlay;
 
-            env = {
-              UV_NO_SYNC = "1";
-              UV_PYTHON = pythonSet'.python.interpreter;
-              UV_PYTHON_DOWNLOADS = "never";
-            } // env;
+            virtualenv =
+              pythonSet'.mkVirtualEnv
+              "${cfg.workspace.name}-env-dev"
+              workspace.deps.all;
+          in
+            { packages = packages ++ [ virtualenv pkgs.uv ];
 
-            shellHook = ''
-              unset PYTHONPATH
-              export REPO_ROOT=$(git rev-parse --show-toplevel)
-            '' + shellHook;
-          } // misc-args;
+              env = {
+                UV_NO_SYNC = "1";
+                UV_PYTHON = pythonSet'.python.interpreter;
+                UV_PYTHON_DOWNLOADS = "never";
+              } // env;
+
+              shellHook = ''
+                unset PYTHONPATH
+                export REPO_ROOT=$(git rev-parse --show-toplevel)
+              '' + shellHook;
+            } // misc-args;
+      };
     };
 }
